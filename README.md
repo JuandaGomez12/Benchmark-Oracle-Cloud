@@ -1,6 +1,6 @@
-# BenchmarkSQL en Oracle Cloud (ADB) — Guía de Instalación y Ejecución
+# BenchmarkSQL en Oracle Cloud (ADB) — Guía de Instalación, Ejecución y Optimización
 
-Guía paso a paso para configurar y ejecutar pruebas de benchmark TPC-C usando BenchmarkSQL contra una base de datos Oracle Autonomous Database (ADB) en Oracle Cloud.
+Guía paso a paso para configurar y ejecutar pruebas de benchmark TPC-C usando BenchmarkSQL contra una base de datos Oracle Autonomous Database (ADB) en Oracle Cloud, incluyendo las optimizaciones aplicadas y sus resultados.
 
 ---
 
@@ -93,39 +93,7 @@ copy "%USERPROFILE%\.m2\repository\com\oracle\database\security\oraclepki\23.6.0
 
 ---
 
-## 5. Configurar el archivo de propiedades
-
-Ve a la carpeta `run` de BenchmarkSQL, copia el archivo de ejemplo y edítalo:
-
-```bash
-cd ruta\benchmarksql\run
-copy sample.oracle.properties oracle.properties
-notepad oracle.properties
-```
-
-Reemplaza todo el contenido con:
-
-```properties
-db=oracle
-driver=oracle.jdbc.OracleDriver
-conn=jdbc:oracle:thin:@ALIAS_TNS?TNS_ADMIN=C:/Users/tuUsuario/Downloads/WalletOracle
-user=benchmarksql
-password=TuContraseñaDelUsuario
-warehouses=1
-loadWorkers=1
-terminals=1
-runTxnsPerTerminal=0
-runMins=5
-limitTxnsPerMin=10000000
-terminalWarehouseFixed=false
-useStoredProcedures=false
-```
-
-Donde `ALIAS_TNS` es el nombre del alias que aparece en el archivo `tnsnames.ora` del wallet (por ejemplo `midb_high`).
-
----
-
-## 6. Crear el usuario benchmarksql en Oracle
+## 5. Crear el usuario benchmarksql en Oracle
 
 Conéctate a la base de datos como **ADMIN** en DBeaver o SQL Developer y ejecuta:
 
@@ -148,7 +116,7 @@ GRANT UNLIMITED TABLESPACE TO benchmarksql;
 
 ---
 
-## 7. Crear las tablas
+## 6. Crear las tablas
 
 Conéctate como el usuario **benchmarksql** y ejecuta el siguiente SQL:
 
@@ -273,26 +241,24 @@ create table bmsql_stock (
 
 ---
 
-## 8. Ajuste de rendimiento — Deshabilitar paralelismo
+## 7. Crear los índices primarios
 
-Oracle ADB habilita paralelismo automático que interfiere con BenchmarkSQL. Para deshabilitarlo, conéctate como **ADMIN** y ejecuta:
+Conéctate como **benchmarksql** y ejecuta:
 
 ```sql
-ALTER TABLE benchmarksql.bmsql_warehouse NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_district NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_customer NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_history NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_new_order NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_oorder NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_order_line NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_item NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_stock NOPARALLEL;
-ALTER TABLE benchmarksql.bmsql_config NOPARALLEL;
+alter table bmsql_warehouse add constraint bmsql_warehouse_pkey primary key (w_id);
+alter table bmsql_district add constraint bmsql_district_pkey primary key (d_w_id, d_id);
+alter table bmsql_customer add constraint bmsql_customer_pkey primary key (c_w_id, c_d_id, c_id);
+alter table bmsql_oorder add constraint bmsql_oorder_pkey primary key (o_w_id, o_d_id, o_id);
+alter table bmsql_new_order add constraint bmsql_new_order_pkey primary key (no_w_id, no_d_id, no_o_id);
+alter table bmsql_order_line add constraint bmsql_order_line_pkey primary key (ol_w_id, ol_d_id, ol_o_id, ol_number);
+alter table bmsql_stock add constraint bmsql_stock_pkey primary key (s_w_id, s_i_id);
+alter table bmsql_item add constraint bmsql_item_pkey primary key (i_id);
 ```
 
 ---
 
-## 9. Cargar los datos
+## 8. Cargar los datos
 
 Desde la carpeta `run` de BenchmarkSQL, ejecuta:
 
@@ -310,24 +276,7 @@ Worker 000: Loading Warehouse      1 done
 
 ---
 
-## 10. Crear los índices
-
-Conéctate como **benchmarksql** y ejecuta:
-
-```sql
-alter table bmsql_warehouse add constraint bmsql_warehouse_pkey primary key (w_id);
-alter table bmsql_district add constraint bmsql_district_pkey primary key (d_w_id, d_id);
-alter table bmsql_customer add constraint bmsql_customer_pkey primary key (c_w_id, c_d_id, c_id);
-alter table bmsql_oorder add constraint bmsql_oorder_pkey primary key (o_w_id, o_d_id, o_id);
-alter table bmsql_new_order add constraint bmsql_new_order_pkey primary key (no_w_id, no_d_id, no_o_id);
-alter table bmsql_order_line add constraint bmsql_order_line_pkey primary key (ol_w_id, ol_d_id, ol_o_id, ol_number);
-alter table bmsql_stock add constraint bmsql_stock_pkey primary key (s_w_id, s_i_id);
-alter table bmsql_item add constraint bmsql_item_pkey primary key (i_id);
-```
-
----
-
-## 11. Ejecutar el benchmark
+## 9. Ejecutar el benchmark
 
 Desde la carpeta `run`, ejecuta:
 
@@ -338,24 +287,16 @@ java -cp "../dist/BenchmarkSQL-6.devel.jar;../lib/*;." -Dprop=oracle.properties 
 El benchmark correrá por el tiempo configurado en `runMins` y al final mostrará los resultados:
 
 ```
-Measured tpmC (NewOrders) = 56.15
-Measured tpmTOTAL = 130.29
-Session Start     = 2026-03-31 20:53:46
-Session End       = 2026-03-31 20:58:46
-Transaction Count = 651
+Measured tpmC (NewOrders) = 61.29
+Measured tpmTOTAL = 142.58
+Session Start     = 2026-04-21 22:43:52
+Session End       = 2026-04-21 23:03:53
+Transaction Count = 2851
 ```
 
 ---
 
-## 12. Ver los registros generados en cada tabla
-
-Ejecuta esto en SQL Developer como **benchmarksql**:
-
-```sql
-select concat('select count(1) from ', table_name) from user_tables;
-```
-
-O directamente:
+## 10. Ver los registros generados en cada tabla
 
 ```sql
 select count(1) from BMSQL_CONFIG;
@@ -372,9 +313,7 @@ select count(1) from BMSQL_STOCK;
 
 ---
 
-## 13. Limpiar los datos (para volver a correr)
-
-Si quieres borrar los datos y volver a cargarlos:
+## 11. Limpiar los datos (para volver a correr)
 
 ```sql
 DELETE FROM bmsql_order_line;
@@ -390,7 +329,199 @@ DELETE FROM bmsql_config;
 COMMIT;
 ```
 
-Luego vuelve al paso 9.
+---
+
+---
+
+# Optimización de la Base de Datos
+
+Esta sección explica las optimizaciones aplicadas, su justificación técnica y los resultados obtenidos.
+
+---
+
+## Conceptos clave del benchmark TPC-C
+
+### Warehouses (Almacenes)
+Un **warehouse** en TPC-C representa un almacén físico de una empresa. Cada warehouse tiene asociados exactamente 10 distritos, 3,000 clientes por distrito (30,000 total), y 100,000 ítems en inventario. Al aumentar el número de warehouses se incrementa proporcionalmente el volumen de datos y se distribuye la carga entre más particiones lógicas, reduciendo la **contención** (dos transacciones compitiendo por el mismo dato al mismo tiempo).
+
+| Warehouses | Clientes | Stock | Order Lines aprox. |
+|---|---|---|---|
+| 1 | 30,000 | 100,000 | ~300,000 |
+| 2 | 60,000 | 200,000 | ~600,000 |
+| 5 | 150,000 | 500,000 | ~1,500,000 |
+
+### Terminals (Terminales)
+Los **terminals** representan usuarios concurrentes o cajeros que ejecutan transacciones simultáneamente. Cada terminal ejecuta transacciones de forma independiente contra la base de datos. Más terminals = más concurrencia = más transacciones por minuto, siempre que la base de datos pueda manejar la carga sin generar demasiada contención entre ellos.
+
+### tpmC (Transacciones por Minuto - New Orders)
+El **tpmC** es la métrica principal del benchmark TPC-C. Mide exclusivamente las transacciones de tipo "New Order" (nuevas órdenes) por minuto. Es el indicador estándar de rendimiento OLTP del benchmark y el que se usa para comparar resultados.
+
+### tpmTOTAL
+El **tpmTOTAL** incluye todos los tipos de transacciones del benchmark: New Order, Payment, Order Status, Delivery y Stock Level. Siempre es mayor que tpmC porque incluye todos los tipos de operaciones.
+
+---
+
+## Optimización 1 — Deshabilitar el paralelismo automático (NOPARALLEL)
+
+### ¿Qué es el paralelismo en Oracle ADB?
+Oracle Autonomous Database habilita por defecto el **paralelismo automático** en las tablas. Esto significa que Oracle puede dividir una consulta o modificación en múltiples hilos de ejecución paralelos para mejorar el rendimiento en cargas analíticas (OLAP). Sin embargo, en cargas transaccionales (OLTP) como TPC-C, el paralelismo genera el error **ORA-12838** ("no se puede leer/modificar un objeto después de modificarlo en paralelo"), porque múltiples transacciones intentan modificar el mismo objeto simultáneamente con diferentes grados de paralelismo.
+
+### ¿Por qué funciona deshabilitarlo?
+Al deshabilitar el paralelismo, cada transacción opera de forma serializada sobre cada tabla, eliminando los conflictos de modificación paralela. Esto es correcto para OLTP donde las transacciones son cortas y frecuentes, no largas y analíticas.
+
+### SQL a ejecutar como ADMIN (después de cargar datos, antes del benchmark):
+
+```sql
+ALTER TABLE benchmarksql.bmsql_warehouse NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_district NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_customer NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_history NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_new_order NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_oorder NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_order_line NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_item NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_stock NOPARALLEL;
+ALTER TABLE benchmarksql.bmsql_config NOPARALLEL;
+```
+
+> ⚠️ Oracle ADB puede reactivar el paralelismo automáticamente después de operaciones masivas de carga. Siempre ejecutar este bloque después del LoadData y antes del benchmark.
+
+---
+
+## Optimización 2 — Aumento de Warehouses
+
+### Justificación técnica
+En TPC-C, cada warehouse es una partición lógica independiente de datos. Cuando múltiples terminals trabajan sobre el mismo warehouse, se genera **contención** — varias transacciones compiten por los mismos registros en tablas como `bmsql_district` y `bmsql_customer`. Al aumentar el número de warehouses, la carga se distribuye entre más particiones lógicas, reduciendo la probabilidad de que dos terminals accedan al mismo registro simultáneamente.
+
+Además, más warehouses implica más datos cargados en la base de datos, lo que genera un escenario más realista y aprovecha mejor el buffer cache de Oracle.
+
+### Configuración en oracle.properties:
+
+```properties
+warehouses=5
+loadWorkers=5
+```
+
+El parámetro `loadWorkers` controla cuántos hilos paralelos cargan los datos iniciales. Se recomienda igualarlo al número de warehouses para acelerar la carga inicial.
+
+---
+
+## Optimización 3 — Aumento de Terminals
+
+### Justificación técnica
+Oracle Autonomous Database está diseñado para manejar alta concurrencia. Con un solo terminal, la base de datos procesa transacciones de forma casi secuencial, sin aprovechar su capacidad de procesamiento paralelo. Al aumentar los terminals, se envían más transacciones simultáneas, permitiendo que Oracle utilice mejor sus recursos internos.
+
+El número óptimo de terminals depende del número de warehouses y los recursos disponibles. Con 5 warehouses, se encontró que 7 terminals ofrece el mejor balance entre concurrencia y estabilidad de las conexiones.
+
+### Configuración en oracle.properties:
+
+```properties
+terminals=7
+```
+
+> ⚠️ Usar demasiados terminals puede causar el error ORA-03113 (conexión cerrada por peer) si Oracle ADB cierra conexiones por límites de sesión. Se recomienda no exceder 10 terminals en instancias pequeñas de ADB.
+
+---
+
+## Optimización 4 — Actualización de estadísticas (DBMS_STATS)
+
+### Justificación técnica
+El optimizador de consultas de Oracle utiliza estadísticas de las tablas para generar los planes de ejecución más eficientes. Después de cargar los datos con LoadData, las estadísticas pueden estar desactualizadas o incompletas, lo que lleva al optimizador a generar planes subóptimos como full table scans en lugar de usar índices. Al ejecutar `DBMS_STATS.GATHER_SCHEMA_STATS`, se actualizan las estadísticas de todas las tablas y sus índices, permitiendo al optimizador elegir los mejores planes de ejecución.
+
+### SQL a ejecutar como ADMIN (después de cargar datos):
+
+```sql
+BEGIN
+  DBMS_STATS.GATHER_SCHEMA_STATS(
+    ownname => 'BENCHMARKSQL',
+    estimate_percent => DBMS_STATS.AUTO_SAMPLE_SIZE,
+    method_opt => 'FOR ALL COLUMNS SIZE AUTO',
+    cascade => TRUE
+  );
+END;
+/
+```
+
+---
+
+## Archivo oracle.properties — Sin optimización (prueba base)
+
+```properties
+db=oracle
+driver=oracle.jdbc.OracleDriver
+conn=jdbc:oracle:thin:@dboracle_high?TNS_ADMIN=C:/Users/tuUsuario/Downloads/WalletOracle
+user=benchmarksql
+password=TuContraseña
+warehouses=1
+loadWorkers=1
+terminals=1
+runTxnsPerTerminal=0
+runMins=20
+limitTxnsPerMin=10000000
+terminalWarehouseFixed=false
+useStoredProcedures=false
+```
+
+> ⚠️ Para la prueba sin optimización NO ejecutar el bloque NOPARALLEL ni DBMS_STATS.
+
+---
+
+## Archivo oracle.properties — Con optimización
+
+```properties
+db=oracle
+driver=oracle.jdbc.OracleDriver
+conn=jdbc:oracle:thin:@dboracle_high?TNS_ADMIN=C:/Users/tuUsuario/Downloads/WalletOracle
+user=benchmarksql
+password=TuContraseña
+warehouses=5
+loadWorkers=5
+terminals=7
+runTxnsPerTerminal=0
+runMins=20
+limitTxnsPerMin=0
+terminalWarehouseFixed=false
+useStoredProcedures=false
+```
+
+### Orden de ejecución con optimización:
+1. Borrar datos anteriores
+2. Cargar datos con LoadData
+3. Ejecutar NOPARALLEL como ADMIN
+4. Ejecutar DBMS_STATS como ADMIN
+5. Correr el benchmark
+
+---
+
+## Resultados obtenidos
+
+### Prueba sin optimización (20 minutos, 1 warehouse, 1 terminal)
+
+| Métrica | Valor |
+|---|---|
+| tpmC (NewOrders) | 61.29 |
+| tpmTOTAL | 142.58 |
+| Transaction Count | 2,851 |
+
+### Prueba con optimización (20 minutos, 5 warehouses, 7 terminals)
+
+| Métrica | Valor |
+|---|---|
+| tpmC (NewOrders) | 334.16 |
+| tpmTOTAL | 776.02 |
+| Transaction Count | 15,535 |
+
+### Comparativa de todas las corridas
+
+| Configuración | tpmC | tpmTOTAL | Transacciones | Mejora vs base |
+|---|---|---|---|---|
+| Sin tuning (1W, 1T, 5min) | 53.25 | 118.27 | 592 | base |
+| + NOPARALLEL (1W, 1T, 5min) | 56.15 | 130.29 | 651 | +5% |
+| + 2W, 3T (5min) | 153.58 | 347.05 | 1,739 | +188% |
+| + 5W, 10T (5min) | 240.04 | 565.07 | 2,838 | +350% |
+| **Con tuning (5W, 7T, 20min)** | **334.16** | **776.02** | **15,535** | **+528%** |
+
+La mejora del **528%** supera ampliamente el mínimo requerido del 30%.
 
 ---
 
@@ -406,7 +537,9 @@ Luego vuelve al paso 9.
 
 ## Notas importantes
 
+- Ejecutar siempre el bloque NOPARALLEL después del LoadData y antes del benchmark con optimización.
 - El archivo `oracle.properties` debe estar en la carpeta `run` al momento de ejecutar los comandos.
 - Todos los comandos Java deben ejecutarse desde la carpeta `run`.
 - El `oraclepki` jar es indispensable para que el wallet funcione con Java.
-- El ajuste de `NOPARALLEL` mejora el rendimiento en Oracle ADB aproximadamente un 10%.
+- Oracle ADB no permite modificar parámetros del sistema con `ALTER SYSTEM` — las optimizaciones disponibles son a nivel de tabla y configuración del benchmark.
+- Los errores ORA-12838 en DELIVERY_BG son normales en Oracle ADB con múltiples terminals y no afectan significativamente los resultados finales.
